@@ -1,0 +1,959 @@
+{
+  "name": "proposal agent",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/fathom-recording",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "15bd773a-f952-4188-9408-a731f7b91e06",
+      "name": "Webhook",
+      "webhookId": "52e5127a-74e6-4a76-a9d6-c914e37ea356"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1DbyJGYFJcMXrHugfDKcrBTNgavaN99qj2ndBM96WvrQ",
+          "mode": "list",
+          "cachedResultName": "aft crm",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1DbyJGYFJcMXrHugfDKcrBTNgavaN99qj2ndBM96WvrQ/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1DbyJGYFJcMXrHugfDKcrBTNgavaN99qj2ndBM96WvrQ/edit#gid=0"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "contact email",
+              "lookupValue": "={{ $json.body.calendar_invitees[0].email }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        224,
+        0
+      ],
+      "id": "346f9cd8-efae-4179-b9f3-2cf30044f4e9",
+      "name": "Get lead info",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "IT9fAnpVqMjp9rWT",
+          "name": "mona Google Sheets aft"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "785e51a1-3b1d-4ab1-bd88-ed336a1498fc",
+              "leftValue": "={{ $json['Sales Transcript ID '] }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        448,
+        0
+      ],
+      "id": "3b682498-2557-430d-9709-977d9eec7a1d",
+      "name": "sales call or closing call?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get data directly from the Webhook node\nconst body = $('Webhook').item.json.body;\n\nconst meetingTitle = body.meeting_title;\nconst recordingDate = body.created_at;\nconst summary = body.default_summary.markdown_formatted;\nconst transcript = body.transcript;\nconst attendees = body.calendar_invitees;\nconst recordingUrl = body.url;\nconst shareUrl = body.share_url;\nconst actionItems = body.action_items;\n\n// Clean up the summary by removing URLs in markdown links\nlet cleanedSummary = summary\n  .replace(/\\[([^\\]]+)\\]\\([^)]+\\)/g, '$1')\n  .replace(/\\n{3,}/g, '\\n\\n');\n\n// Format the transcript (group consecutive messages from same speaker)\nlet formattedTranscript = '';\nlet currentSpeaker = null;\nlet currentText = [];\n\ntranscript.forEach((entry, index) => {\n  const speakerName = entry.speaker.display_name;\n  const text = entry.text;\n  \n  if (speakerName === currentSpeaker) {\n    currentText.push(text);\n  } else {\n    if (currentSpeaker !== null) {\n      formattedTranscript += `**${currentSpeaker}:**\\n${currentText.join(' ')}\\n\\n`;\n    }\n    currentSpeaker = speakerName;\n    currentText = [text];\n  }\n  \n  if (index === transcript.length - 1) {\n    formattedTranscript += `**${currentSpeaker}:**\\n${currentText.join(' ')}`;\n  }\n});\n\n// Format attendees as simple array\nconst attendeesList = attendees.map(attendee => ({\n  name: attendee.name,\n  email: attendee.email\n}));\n\n// Return everything as separate fields\nreturn {\n  json: {\n    meeting_title: meetingTitle,\n    date: recordingDate,\n    attendees: attendeesList,\n    recording_url: recordingUrl,\n    playback_url: shareUrl,\n    summary: cleanedSummary.trim(),\n    transcript: formattedTranscript.trim(),\n    action_items: actionItems\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        -96
+      ],
+      "id": "e7b18f8a-e8a6-4126-b552-7159bb1d00a2",
+      "name": "clean up fathom data"
+    },
+    {
+      "parameters": {
+        "model": "anthropic/claude-sonnet-4.5",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        976,
+        128
+      ],
+      "id": "601235a8-d18c-456b-95f3-d3e18aace1e2",
+      "name": "OpenRouter Chat Model",
+      "credentials": {
+        "openRouterApi": {
+          "id": "CjfJNwJN1QRmxvQ7",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "copy",
+        "fileId": {
+          "__rl": true,
+          "value": "1pj89K23f8psVBis2dWL7YaG-CsN7434etql5v6jnjBA",
+          "mode": "id"
+        },
+        "name": "=Proposal for {{ $('Get lead info').item.json['company name'] }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1248,
+        -96
+      ],
+      "id": "a6e79ac6-7d9a-4171-8d99-9572327c43d4",
+      "name": "copy existing template",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "KGsDNsjsMKI4ULlj",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "text": "=Call with company: {{ $('Get lead info').item.json['Company Name'] }}\n   Transcript of the call: {{ $('clean up fathom data').item.json.transcript }}\n",
+        "attributes": {
+          "attributes": [
+            {
+              "name": "proposal title",
+              "description": "proposal title",
+              "required": true
+            },
+            {
+              "name": "proposal description",
+              "description": "short description of the proposal. It will be located under the title, so should be a bit short.",
+              "required": true
+            },
+            {
+              "name": "client bottlenecks",
+              "description": "close look at the problem and clients bottlenecks (no more than 120 words)",
+              "required": true
+            },
+            {
+              "name": "aim of the project",
+              "description": "aim of the project description"
+            },
+            {
+              "name": "goal of the project",
+              "description": "goal of the project description",
+              "required": true
+            },
+            {
+              "name": "first solution setting ",
+              "description": "First solution heading. If we have more than three or four or five solutions, we can merge some of them that are kind of related because in templates we are passing it to have first solution, second solution, and third solution. Be aware of that."
+            },
+            {
+              "name": "second solution heading ",
+              "description": "Second solution heading. If we have more than three or four or five solutions, we can merge some of them that are kind of related because in templates we are passing it to have first solution, second solution, and third solution. Be aware of that.",
+              "required": true
+            },
+            {
+              "name": "third solution setting",
+              "description": "third solution heading. If we have more than three or four or five solutions, we can merge some of them that are kind of related because in templates we are passing it to have first solution, second solution, and third solution. Be aware of that.",
+              "required": true
+            },
+            {
+              "name": "first solution description ",
+              "description": "First solution description. If we have more than three or four or five solutions, we can merge some of them that are kind of related because in templates we are passing it to have first solution, second solution, and third solution. Be aware of that."
+            },
+            {
+              "name": "second solution setting",
+              "description": "Second solution description. If we have more than three or four or five solutions, we can merge some of them that are kind of related because in templates we are passing it to have first solution, second solution, and third solution. Be aware of that.",
+              "required": true
+            },
+            {
+              "name": "third solution setting",
+              "description": "third solution description. If we have more than three or four or five solutions, we can merge some of them that are kind of related because in templates we are passing it to have first solution, second solution, and third solution. Be aware of that.",
+              "required": true
+            },
+            {
+              "name": "Phase 1",
+              "description": "Phase 1 Description. Be aware that we have 4 phases total, so it's very needed that you create these phases in a smart way.",
+              "required": true
+            },
+            {
+              "name": "Phase 2",
+              "description": "Phase 2 Description. Be aware that we have 4 phases total, so it's very needed that you create these phases in a smart way.",
+              "required": true
+            },
+            {
+              "name": "Phase 3",
+              "description": "Phase 3 Description. Be aware that we have 4 phases total, so it's very needed that you create these phases in a smart way.",
+              "required": true
+            },
+            {
+              "name": "Phase 4",
+              "description": "Phase 4 Description. Be aware that we have 4 phases total, so it's very needed that you create these phases in a smart way."
+            },
+            {
+              "name": "Cost first half ",
+              "description": "Cost of the first half of the full price for the project",
+              "required": true
+            },
+            {
+              "name": "First half payment deadline ",
+              "description": "The first half of the payment is due one week after the sales call. Please note that we don’t begin any work until the first half payment has been received.",
+              "required": true
+            },
+            {
+              "name": "Remaining cost half",
+              "description": "Cost of the remaining half of the full price for the project",
+              "required": true
+            },
+            {
+              "name": "Remaining half cost deadline",
+              "description": "This one should be said in words: \"One week after we notify the client that we have submitted the work, that we're ready to go ahead and we're done with our part",
+              "required": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.informationExtractor",
+      "typeVersion": 1.2,
+      "position": [
+        896,
+        -96
+      ],
+      "id": "951fdd0a-82fa-44bb-9daf-0850d0fd541c",
+      "name": "Extract information for the proposal"
+    },
+    {
+      "parameters": {
+        "operation": "replaceText",
+        "presentationId": "={{ $json.id }}",
+        "textUi": {
+          "textValues": [
+            {
+              "text": "={{proposalTitle}}",
+              "replaceText": "={{ $('Extract information for the proposal').item.json.output['proposal title'] }}"
+            },
+            {
+              "text": "={{proposalDescription}}",
+              "replaceText": "={{ $('Extract information for the proposal').item.json.output['proposal description'] }}"
+            },
+            {
+              "text": "={{bottlenecks}}",
+              "replaceText": "={{ $('Extract information for the proposal').item.json.output['clients bottlenecks'] }}"
+            },
+            {
+              "text": "={{aimdescription}}",
+              "replaceText": "={{ $('Extract information for the proposal').item.json.output['aim of the project'] }}"
+            },
+            {
+              "text": "={{goaldescription}}",
+              "replaceText": "={{ $('Extract information for the proposal').item.json.output['goal of the project'] }}"
+            },
+            {
+              "text": "{{firstsolutionheading}",
+              "replaceText": "={{ $('Extract information for the proposal').item.json.output['first solution heading'] }}"
+            },
+            {
+              "text": "={{firstsolutiondescription}}",
+              "replaceText": "={{ $('Extract information for the proposal').item.json.output['first solution description'] }}"
+            },
+            {
+              "text": "={{secondsolutionheading}}",
+              "replaceText": "={{ $('Extract information for the proposal').item.json.output['second solution heading'] }}"
+            },
+            {
+              "text": "={{secondsolutiondescription}}",
+              "replaceText": "={{ $('Extract information for the proposal').item.json.output['second solution description'] }}"
+            },
+            {
+              "text": "={{thirdsolutionheading}}",
+              "replaceText": "={{ $('Extract information for the proposal').item.json.output['third solution heading'] }}"
+            },
+            {
+              "text": "={{thirdsolutiondescription}}",
+              "replaceText": "={{ $('Extract information for the proposal').item.json.output['third solution description'] }}"
+            },
+            {
+              "text": "={{phaseonedescription}}",
+              "replaceText": "={{ $('Extract information for the proposal').item.json.output['Phase 1'] }}"
+            },
+            {
+              "text": "={{phasetwodescription}}",
+              "replaceText": "={{ $('Extract information for the proposal').item.json.output['Phase 2'] }}"
+            },
+            {
+              "text": "={{phasethreedescription}}",
+              "replaceText": "={{ $('Extract information for the proposal').item.json.output['Phase 3'] }}"
+            },
+            {
+              "text": "={{phasefourdescription}}",
+              "replaceText": "={{ $('Extract information for the proposal').item.json.output['Phase 4'] }}"
+            },
+            {
+              "text": "={{firsthalfcost}}",
+              "replaceText": "={{ $('Extract information for the proposal').item.json.output['Cost first half'] }}"
+            },
+            {
+              "text": "={{firsthalfcostdeadline}}",
+              "replaceText": "={{ $('Extract information for the proposal').item.json.output['First half payment deadline'] }}"
+            },
+            {
+              "text": "={{secondhalfcost}}",
+              "replaceText": "={{ $('Extract information for the proposal').item.json.output['Remaining half cost'] }}"
+            },
+            {
+              "text": "={{secondhalfcostdeadline}}",
+              "replaceText": "={{ $('Extract information for the proposal').item.json.output['Remaining half cost deadline'] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSlides",
+      "typeVersion": 2,
+      "position": [
+        1472,
+        -96
+      ],
+      "id": "1076bd55-33f0-433a-ae89-f569edf8e490",
+      "name": "Replace text in the proposal",
+      "credentials": {
+        "googleSlidesOAuth2Api": {
+          "id": "erJYwiZM1I0pOGqe",
+          "name": "Google Slides account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "derek@aismartr.com",
+        "subject": "Generated proposal for review",
+        "message": "=Please review the generated proposal and make any necessary changes                 Presentation URL: https://docs.google.com/presentation/d/{{ $json.presentationId }}/edit",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1696,
+        -96
+      ],
+      "id": "463c988a-b2c3-415a-a56d-bb95cb1187a8",
+      "name": "Send the proposal for review and edits",
+      "webhookId": "67406651-a765-4721-8315-f032d4c72f39",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "dFUuPQndOgTVOCiW",
+          "name": "mona gmail aft"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1DbyJGYFJcMXrHugfDKcrBTNgavaN99qj2ndBM96WvrQ",
+          "mode": "list",
+          "cachedResultName": "aft crm",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1DbyJGYFJcMXrHugfDKcrBTNgavaN99qj2ndBM96WvrQ/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1DbyJGYFJcMXrHugfDKcrBTNgavaN99qj2ndBM96WvrQ/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "contact email": "{{ $('Webhook').item.json.body.calendar_invitees[0].email }}",
+            "Proposal Sent?": "true",
+            "showed call?": "yes",
+            "Sales Transcript ID": "{{ $('Webhook').item.json.body.recording_id }}"
+          },
+          "matchingColumns": [
+            "contact email"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "first name",
+              "displayName": "first name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last name",
+              "displayName": "last name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "role",
+              "displayName": "role",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company name",
+              "displayName": "company name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company address",
+              "displayName": "company address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company industry",
+              "displayName": "company industry",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "contact email",
+              "displayName": "contact email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "contact phone",
+              "displayName": "contact phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "website",
+              "displayName": "website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "started sequence?",
+              "displayName": "started sequence?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sequence last date",
+              "displayName": "sequence last date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "follow ups",
+              "displayName": "follow ups",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "call scheduled?",
+              "displayName": "call scheduled?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "showed call?",
+              "displayName": "showed call?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Sales Transcript ID",
+              "displayName": "Sales Transcript ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Latest/ Closed Transcript ID",
+              "displayName": "Latest/ Closed Transcript ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Proposal Sent?",
+              "displayName": "Proposal Sent?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1920,
+        -96
+      ],
+      "id": "aa3a6f65-be15-4348-b890-43590bca1e3d",
+      "name": "Update row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "IT9fAnpVqMjp9rWT",
+          "name": "mona Google Sheets aft"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1DbyJGYFJcMXrHugfDKcrBTNgavaN99qj2ndBM96WvrQ",
+          "mode": "list",
+          "cachedResultName": "aft crm",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1DbyJGYFJcMXrHugfDKcrBTNgavaN99qj2ndBM96WvrQ/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1DbyJGYFJcMXrHugfDKcrBTNgavaN99qj2ndBM96WvrQ/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "contact email": "{{ $('Webhook').item.json.body.calendar_invitees[0].email }}",
+            "Latest/ Closed Transcript ID": "{{ $('Webhook').item.json.body.recording_id }}"
+          },
+          "matchingColumns": [
+            "contact email"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "first name",
+              "displayName": "first name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last name",
+              "displayName": "last name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "role",
+              "displayName": "role",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company name",
+              "displayName": "company name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company address",
+              "displayName": "company address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company industry",
+              "displayName": "company industry",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "contact email",
+              "displayName": "contact email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "contact phone",
+              "displayName": "contact phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "website",
+              "displayName": "website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "started sequence?",
+              "displayName": "started sequence?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sequence last date",
+              "displayName": "sequence last date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "follow ups",
+              "displayName": "follow ups",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "call scheduled?",
+              "displayName": "call scheduled?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "showed call?",
+              "displayName": "showed call?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Sales Transcript ID",
+              "displayName": "Sales Transcript ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Latest/ Closed Transcript ID",
+              "displayName": "Latest/ Closed Transcript ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Proposal Sent?",
+              "displayName": "Proposal Sent?",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        672,
+        96
+      ],
+      "id": "4de9c17f-34b3-4e8e-bd0d-5756a67d49b0",
+      "name": "Update row with latest call ID",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "IT9fAnpVqMjp9rWT",
+          "name": "mona Google Sheets aft"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get lead info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get lead info": {
+      "main": [
+        [
+          {
+            "node": "sales call or closing call?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "sales call or closing call?": {
+      "main": [
+        [
+          {
+            "node": "clean up fathom data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update row with latest call ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "clean up fathom data": {
+      "main": [
+        [
+          {
+            "node": "Extract information for the proposal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extract information for the proposal",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "copy existing template": {
+      "main": [
+        [
+          {
+            "node": "Replace text in the proposal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract information for the proposal": {
+      "main": [
+        [
+          {
+            "node": "copy existing template",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Replace text in the proposal": {
+      "main": [
+        [
+          {
+            "node": "Send the proposal for review and edits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send the proposal for review and edits": {
+      "main": [
+        [
+          {
+            "node": "Update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "c8939201-b59d-48a0-bfc1-83b9e061b596",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9cb8db83a42d46a67d695967527a2bdd802b367d505c4cc1a5966042d24528d8"
+  },
+  "id": "IlkAiZ5SfPzL7soB",
+  "tags": []
+}

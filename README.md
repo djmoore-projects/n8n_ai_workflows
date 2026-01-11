@@ -8,6 +8,7 @@ These workflows are not demos or experiments. They are production-oriented syste
 
 The goal of this repository is to showcase how AI can be operationalized to reduce manual work, accelerate revenue workflows, and improve execution quality across go-to-market teams.
 
+
 What This Repository Demonstrates
 	•	End-to-end AI orchestration using n8n
 	•	LLM-driven reasoning with structured outputs (not free-form prompts)
@@ -15,7 +16,8 @@ What This Repository Demonstrates
 	•	Event-driven and scheduled workflows
 	•	Production design patterns for reliability, observability, and security
 
-Included Workflows
+Included Workflows:
+
 
 1. Sales Agent
 
@@ -30,7 +32,8 @@ Key capabilities:
 Primary value:
 Creates a lightweight, automation-driven RevOps layer without requiring a full CRM rebuild.
 
-📁 /workflows/sales-agent
+
+
 
 2. Proposal Agent
 
@@ -46,7 +49,8 @@ Key capabilities:
 Primary value:
 Reduces proposal turnaround time and removes manual synthesis from the post-call process.
 
-📁 /workflows/proposal-agent
+
+
 
 3. Onboarding & Contract Agent
 
@@ -62,7 +66,8 @@ Key capabilities:
 Primary value:
 Creates a seamless transition from “Closed Won” to signed agreement with minimal human effort.
 
-📁 /workflows/onboarding-agent
+
+
 
 Architecture & Design Philosophy
 
@@ -90,6 +95,7 @@ Security & Data Handling
 	•	API keys and secrets are managed via n8n credentials
 	•	Sample inputs and outputs are fully anonymized
 	•	No production data is included in this repository
+
 
 About the Author
 

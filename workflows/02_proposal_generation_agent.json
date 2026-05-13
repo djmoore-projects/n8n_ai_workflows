@@ -1,0 +1,148 @@
+{
+  "name": "02 · Proposal Generation Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/proposal-trigger",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook: Call Recording Received",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate and extract transcript payload\nconst body = $input.item.json.body;\nif (!body.transcript || !body.client_name) {\n  throw new Error('Missing required fields: transcript, client_name');\n}\nreturn [{\n  json: {\n    client_name: body.client_name.trim(),\n    company: (body.company || '').trim(),\n    transcript: body.transcript,\n    call_date: body.call_date || new Date().toISOString().split('T')[0],\n    sales_rep: body.sales_rep || 'Derek Moore'\n  }\n}];"
+      },
+      "id": "validate-payload",
+      "name": "Validate & Extract Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-5",
+        "messages": {
+          "values": [
+            {
+              "role": "user",
+              "content": "=You are a sales analyst. Extract structured information from the following sales call transcript.\n\nTranscript:\n{{ $json.transcript }}\n\nReturn ONLY valid JSON matching this schema (no markdown, no explanation):\n{\n  \"pain_points\": [\"string\"],\n  \"goals\": [\"string\"],\n  \"budget_signals\": \"string\",\n  \"timeline\": \"string\",\n  \"decision_makers\": [\"string\"],\n  \"objections\": [\"string\"],\n  \"recommended_services\": [\"string\"],\n  \"next_steps\": [\"string\"]\n}"
+            }
+          ]
+        },
+        "options": { "temperature": 0.1, "maxTokens": 800 }
+      },
+      "id": "extract-call-info",
+      "name": "Extract Structured Call Info",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "credentials": { "anthropicApi": { "id": "anthropic-cred", "name": "Anthropic" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Claude's JSON output\nconst raw = $input.item.json.content;\ntry {\n  const parsed = JSON.parse(raw);\n  return [{ json: { ...parsed, ...$('Validate & Extract Payload').item.json } }];\n} catch (e) {\n  throw new Error(`Claude returned invalid JSON: ${raw.slice(0, 200)}`);\n}"
+      },
+      "id": "parse-extraction",
+      "name": "Parse Extraction Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-5",
+        "messages": {
+          "values": [
+            {
+              "role": "user",
+              "content": "=Write a professional proposal executive summary for:\n\nClient: {{ $json.client_name }} ({{ $json.company }})\nPain Points: {{ JSON.stringify($json.pain_points) }}\nGoals: {{ JSON.stringify($json.goals) }}\nTimeline: {{ $json.timeline }}\nBudget Signals: {{ $json.budget_signals }}\nRecommended Services: {{ JSON.stringify($json.recommended_services) }}\nNext Steps: {{ JSON.stringify($json.next_steps) }}\n\nWrite 3 paragraphs: (1) understanding of their situation, (2) proposed solution and value, (3) next steps. Professional, specific, no generic filler."
+            }
+          ]
+        },
+        "options": { "temperature": 0.3, "maxTokens": 600 }
+      },
+      "id": "generate-summary",
+      "name": "Generate Executive Summary",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1,
+      "position": [1120, 300],
+      "credentials": { "anthropicApi": { "id": "anthropic-cred", "name": "Anthropic" } }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "title": "={{ 'Proposal — ' + $json.client_name + ' — ' + $json.call_date }}",
+        "content": "={{ $('Generate Executive Summary').item.json.content }}",
+        "folderId": "={{ $env.PROPOSALS_FOLDER_ID }}",
+        "options": {}
+      },
+      "id": "create-google-doc",
+      "name": "Create Google Doc Draft",
+      "type": "n8n-nodes-base.googleDocs",
+      "typeVersion": 2,
+      "position": [1340, 300],
+      "credentials": { "googleDocsOAuth2Api": { "id": "google-docs-cred", "name": "Google Docs" } }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $env.REVIEW_EMAIL }}",
+        "subject": "={{ '[REVIEW] Proposal ready — ' + $json.client_name }}",
+        "message": "=A new proposal draft is ready for review.\n\nClient: {{ $json.client_name }} ({{ $json.company }})\nCall date: {{ $json.call_date }}\nSales rep: {{ $json.sales_rep }}\n\nKey pain points: {{ ($json.pain_points || []).join(', ') }}\n\nDoc link: {{ $('Create Google Doc Draft').item.json.documentUrl }}\n\nPlease review and approve before sending to client.",
+        "options": {}
+      },
+      "id": "notify-reviewer",
+      "name": "Notify Reviewer",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1560, 300],
+      "credentials": { "gmailOAuth2": { "id": "gmail-cred", "name": "Gmail" } }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "fileId": "={{ $env.LEADS_SHEET_ID }}",
+        "sheetName": "Proposals",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "client": "={{ $json.client_name }}",
+            "company": "={{ $json.company }}",
+            "call_date": "={{ $json.call_date }}",
+            "doc_url": "={{ $('Create Google Doc Draft').item.json.documentUrl }}",
+            "status": "pending_review",
+            "created_at": "={{ new Date().toISOString() }}"
+          }
+        }
+      },
+      "id": "log-proposal",
+      "name": "Log Proposal to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1780, 300],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "google-sheets-cred", "name": "Google Sheets" } }
+    }
+  ],
+  "connections": {
+    "Webhook: Call Recording Received": { "main": [[{ "node": "Validate & Extract Payload", "type": "main", "index": 0 }]] },
+    "Validate & Extract Payload": { "main": [[{ "node": "Extract Structured Call Info", "type": "main", "index": 0 }]] },
+    "Extract Structured Call Info": { "main": [[{ "node": "Parse Extraction Output", "type": "main", "index": 0 }]] },
+    "Parse Extraction Output": { "main": [[{ "node": "Generate Executive Summary", "type": "main", "index": 0 }]] },
+    "Generate Executive Summary": { "main": [[{ "node": "Create Google Doc Draft", "type": "main", "index": 0 }]] },
+    "Create Google Doc Draft": { "main": [[{ "node": "Notify Reviewer", "type": "main", "index": 0 }]] },
+    "Notify Reviewer": { "main": [[{ "node": "Log Proposal to Sheet", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "n8nVersion": "1.45.0"
+  }
+}

@@ -1,0 +1,157 @@
+{
+  "name": "01 · Sales Lead Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "hours", "hoursInterval": 6 }]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "fileId": "={{ $env.LEADS_SHEET_ID }}",
+        "options": { "range": "Leads!A:Z" }
+      },
+      "id": "read-leads-sheet",
+      "name": "Read Leads Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [460, 300],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "google-sheets-cred", "name": "Google Sheets" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "new",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "filter-new-leads",
+      "name": "Filter New Leads",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalise lead data before enrichment\nconst raw = $input.item.json;\nreturn [{\n  json: {\n    id: raw.id || crypto.randomUUID(),\n    first_name: (raw.first_name || '').trim(),\n    last_name: (raw.last_name || '').trim(),\n    email: (raw.email || '').toLowerCase().trim(),\n    company: (raw.company || '').trim(),\n    source: (raw.lead_source || 'unknown').toLowerCase(),\n    created_at: raw.created_at || new Date().toISOString(),\n    engagement_stage: raw.engagement_stage || 'cold',\n    notes: raw.notes || ''\n  }\n}];"
+      },
+      "id": "normalise-lead",
+      "name": "Normalise Lead Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-5",
+        "messages": {
+          "values": [
+            {
+              "role": "user",
+              "content": "=You are a sales development representative.\n\nLead details:\n- Name: {{ $json.first_name }} {{ $json.last_name }}\n- Company: {{ $json.company }}\n- Source: {{ $json.source }}\n- Stage: {{ $json.engagement_stage }}\n- Notes: {{ $json.notes }}\n\nWrite a personalised, concise outreach email (max 150 words) appropriate for a {{ $json.engagement_stage }} lead from {{ $json.source }}. Do not include subject line. Sign off as 'Derek, AI Smartr'."
+            }
+          ]
+        },
+        "options": { "temperature": 0.4, "maxTokens": 400 }
+      },
+      "id": "generate-outreach",
+      "name": "Generate Outreach Email",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1,
+      "position": [1120, 300],
+      "credentials": { "anthropicApi": { "id": "anthropic-cred", "name": "Anthropic" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.engagement_stage }}",
+              "rightValue": "warm",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "route-by-stage",
+      "name": "Route by Engagement Stage",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "Thought you'd find this relevant",
+        "message": "={{ $('Generate Outreach Email').item.json.content }}",
+        "options": {}
+      },
+      "id": "send-warm-email",
+      "name": "Send Warm Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1560, 200],
+      "credentials": { "gmailOAuth2": { "id": "gmail-cred", "name": "Gmail" } }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "fileId": "={{ $env.LEADS_SHEET_ID }}",
+        "sheetName": "Outreach Log",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_id": "={{ $json.id }}",
+            "email": "={{ $json.email }}",
+            "stage": "={{ $json.engagement_stage }}",
+            "sent_at": "={{ new Date().toISOString() }}",
+            "body_preview": "={{ $('Generate Outreach Email').item.json.content.slice(0, 120) }}"
+          }
+        }
+      },
+      "id": "log-outreach",
+      "name": "Log to Outreach Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1780, 300],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "google-sheets-cred", "name": "Google Sheets" } }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": { "main": [[{ "node": "Read Leads Sheet", "type": "main", "index": 0 }]] },
+    "Read Leads Sheet": { "main": [[{ "node": "Filter New Leads", "type": "main", "index": 0 }]] },
+    "Filter New Leads": { "main": [[{ "node": "Normalise Lead Data", "type": "main", "index": 0 }]] },
+    "Normalise Lead Data": { "main": [[{ "node": "Generate Outreach Email", "type": "main", "index": 0 }]] },
+    "Generate Outreach Email": { "main": [[{ "node": "Route by Engagement Stage", "type": "main", "index": 0 }]] },
+    "Route by Engagement Stage": {
+      "main": [
+        [{ "node": "Send Warm Email", "type": "main", "index": 0 }],
+        [{ "node": "Log to Outreach Sheet", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Warm Email": { "main": [[{ "node": "Log to Outreach Sheet", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "n8nVersion": "1.45.0"
+  }
+}

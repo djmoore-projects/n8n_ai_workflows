@@ -1,0 +1,145 @@
+{
+  "name": "03 · Onboarding & Contract Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/deal-closed",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "crm-webhook",
+      "name": "Webhook: Deal Closed Won",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate CRM payload and extract deal fields\nconst deal = $input.item.json.body;\nconst required = ['deal_id', 'client_name', 'client_email', 'deal_value'];\nconst missing = required.filter(k => !deal[k]);\nif (missing.length) throw new Error(`Missing fields: ${missing.join(', ')}`);\n\nreturn [{\n  json: {\n    deal_id: deal.deal_id,\n    client_name: deal.client_name.trim(),\n    client_email: deal.client_email.toLowerCase().trim(),\n    company: (deal.company || '').trim(),\n    deal_value: parseFloat(deal.deal_value),\n    currency: deal.currency || 'USD',\n    start_date: deal.start_date || new Date().toISOString().split('T')[0],\n    sales_transcript: deal.sales_transcript || '',\n    closing_transcript: deal.closing_transcript || '',\n    payment_terms: deal.payment_terms || 'net-30',\n    sales_rep: deal.sales_rep || 'Derek Moore'\n  }\n}];"
+      },
+      "id": "validate-deal",
+      "name": "Validate Deal Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-5",
+        "messages": {
+          "values": [
+            {
+              "role": "user",
+              "content": "=You are a contract analyst. Extract all relevant contract terms from the following sales and closing call transcripts.\n\nSales transcript:\n{{ $json.sales_transcript }}\n\nClosing transcript:\n{{ $json.closing_transcript }}\n\nReturn ONLY valid JSON (no markdown):\n{\n  \"services_agreed\": [\"string\"],\n  \"deliverables\": [\"string\"],\n  \"milestones\": [{\"name\": \"string\", \"due_weeks\": number, \"payment_pct\": number}],\n  \"exclusions\": [\"string\"],\n  \"special_terms\": [\"string\"],\n  \"ip_ownership\": \"string\",\n  \"termination_notice_days\": number\n}"
+            }
+          ]
+        },
+        "options": { "temperature": 0.1, "maxTokens": 1000 }
+      },
+      "id": "extract-terms",
+      "name": "Extract Contract Terms",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "credentials": { "anthropicApi": { "id": "anthropic-cred", "name": "Anthropic" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge extracted terms with deal metadata\nconst terms = JSON.parse($('Extract Contract Terms').item.json.content);\nconst deal = $('Validate Deal Payload').item.json;\n\n// Compute milestone payment amounts\nconst milestones = (terms.milestones || []).map(m => ({\n  ...m,\n  payment_amount: Math.round(deal.deal_value * (m.payment_pct / 100) * 100) / 100,\n  due_date: new Date(new Date(deal.start_date).getTime() + m.due_weeks * 7 * 86400000)\n    .toISOString().split('T')[0]\n}));\n\nreturn [{ json: { ...deal, ...terms, milestones } }];"
+      },
+      "id": "merge-contract-data",
+      "name": "Merge Contract Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "name": "={{ $json.client_name + ' — Service Agreement — ' + $json.deal_id }}",
+        "templateId": "={{ $env.PANDADOC_TEMPLATE_ID }}",
+        "recipients": [
+          {
+            "email": "={{ $json.client_email }}",
+            "first_name": "={{ $json.client_name.split(' ')[0] }}",
+            "last_name": "={{ $json.client_name.split(' ').slice(1).join(' ') }}",
+            "role": "Client"
+          }
+        ],
+        "tokens": [
+          { "name": "client.name", "value": "={{ $json.client_name }}" },
+          { "name": "client.company", "value": "={{ $json.company }}" },
+          { "name": "deal.value", "value": "={{ $json.currency + ' ' + $json.deal_value.toLocaleString() }}" },
+          { "name": "deal.start_date", "value": "={{ $json.start_date }}" },
+          { "name": "deal.payment_terms", "value": "={{ $json.payment_terms }}" },
+          { "name": "deal.services", "value": "={{ ($json.services_agreed || []).join('; ') }}" },
+          { "name": "deal.deliverables", "value": "={{ ($json.deliverables || []).join('; ') }}" },
+          { "name": "deal.termination_days", "value": "={{ String($json.termination_notice_days || 30) }}" },
+          { "name": "deal.ip_ownership", "value": "={{ $json.ip_ownership || 'Client' }}" }
+        ]
+      },
+      "id": "create-pandadoc",
+      "name": "Create PandaDoc Contract",
+      "type": "n8n-nodes-base.pandaDoc",
+      "typeVersion": 1,
+      "position": [1120, 300],
+      "credentials": { "pandaDocApi": { "id": "pandadoc-cred", "name": "PandaDoc" } }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "documentId": "={{ $json.id }}",
+        "options": {
+          "message": "=Hi {{ $('Merge Contract Data').item.json.client_name.split(' ')[0] }},\n\nThank you for choosing to work with us! Please review and sign the attached service agreement at your earliest convenience.\n\nIf you have any questions, just reply to this email.\n\nBest,\nDerek Moore\nAI Smartr"
+        }
+      },
+      "id": "send-contract",
+      "name": "Send Contract for Signature",
+      "type": "n8n-nodes-base.pandaDoc",
+      "typeVersion": 1,
+      "position": [1340, 300],
+      "credentials": { "pandaDocApi": { "id": "pandadoc-cred", "name": "PandaDoc" } }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "fileId": "={{ $env.LEADS_SHEET_ID }}",
+        "sheetName": "Contracts",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "deal_id": "={{ $('Merge Contract Data').item.json.deal_id }}",
+            "client": "={{ $('Merge Contract Data').item.json.client_name }}",
+            "value": "={{ $('Merge Contract Data').item.json.deal_value }}",
+            "pandadoc_id": "={{ $('Create PandaDoc Contract').item.json.id }}",
+            "status": "sent_for_signature",
+            "sent_at": "={{ new Date().toISOString() }}"
+          }
+        }
+      },
+      "id": "log-contract",
+      "name": "Log Contract to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1560, 300],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "google-sheets-cred", "name": "Google Sheets" } }
+    }
+  ],
+  "connections": {
+    "Webhook: Deal Closed Won": { "main": [[{ "node": "Validate Deal Payload", "type": "main", "index": 0 }]] },
+    "Validate Deal Payload": { "main": [[{ "node": "Extract Contract Terms", "type": "main", "index": 0 }]] },
+    "Extract Contract Terms": { "main": [[{ "node": "Merge Contract Data", "type": "main", "index": 0 }]] },
+    "Merge Contract Data": { "main": [[{ "node": "Create PandaDoc Contract", "type": "main", "index": 0 }]] },
+    "Create PandaDoc Contract": { "main": [[{ "node": "Send Contract for Signature", "type": "main", "index": 0 }]] },
+    "Send Contract for Signature": { "main": [[{ "node": "Log Contract to Sheet", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "n8nVersion": "1.45.0"
+  }
+}

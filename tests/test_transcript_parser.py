@@ -5,11 +5,9 @@ from __future__ import annotations
 import pytest
 
 from src.data_prep.transcript_parser import (
-    ParsedTranscript,
     extract_action_items,
     parse_transcript,
 )
-
 
 SAMPLE_TRANSCRIPT = """\
 Derek: Thanks for jumping on the call today. Can you walk me through your current process?
@@ -79,7 +77,10 @@ def test_to_dict_has_required_keys():
 
 
 def test_cleaned_text_removes_fillers():
-    transcript_with_fillers = "Derek: So, um, basically what I'll do is send you the proposal.\nClient: Uh, okay."
+    transcript_with_fillers = (
+        "Derek: So, um, basically what I'll do is send you the proposal.\n"
+        "Client: Uh, okay."
+    )
     result = parse_transcript(transcript_with_fillers)
     cleaned = result._cleaned_text()
     assert "um" not in cleaned.lower()

@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional
-
 
 _SPEAKER_RE = re.compile(r"^([A-Z][^:]{1,40}):\s*(.+)$", re.MULTILINE)
 _FILLER_WORDS = frozenset({"um", "uh", "like", "you know", "so", "basically", "actually"})
@@ -21,10 +19,10 @@ class ParsedTranscript:
     """Structured representation of a sales call transcript."""
 
     raw_text: str
-    speakers: List[str] = field(default_factory=list)
-    turns: List[dict] = field(default_factory=list)
+    speakers: list[str] = field(default_factory=list)
+    turns: list[dict] = field(default_factory=list)
     word_count: int = 0
-    duration_estimate_minutes: Optional[float] = None
+    duration_estimate_minutes: float | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -88,7 +86,7 @@ def parse_transcript(text: str) -> ParsedTranscript:
     )
 
 
-def extract_action_items(transcript: ParsedTranscript) -> List[str]:
+def extract_action_items(transcript: ParsedTranscript) -> list[str]:
     """Heuristically extract action items from transcript turns.
 
     Looks for phrases like "I'll", "we'll", "will send", "will follow up",
@@ -124,7 +122,7 @@ def _normalize_whitespace(text: str) -> str:
     return re.sub(r"[^\S\n]+", " ", text).strip()
 
 
-def _dedupe_ordered(items: List[str]) -> List[str]:
+def _dedupe_ordered(items: list[str]) -> list[str]:
     seen: set = set()
     result = []
     for item in items:

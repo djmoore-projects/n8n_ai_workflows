@@ -13,13 +13,12 @@ import io
 import re
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterator, List, Optional
-
+from typing import Any
 
 _PHONE_RE = re.compile(r"[^\d+]")
 
 
-def normalize_lead(raw: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_lead(raw: dict[str, Any]) -> dict[str, Any]:
     """Normalize a single raw lead dict into the canonical n8n workflow schema.
 
     Args:
@@ -52,7 +51,7 @@ def normalize_lead(raw: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def normalize_leads_csv(csv_text: str) -> List[Dict[str, Any]]:
+def normalize_leads_csv(csv_text: str) -> list[dict[str, Any]]:
     """Parse a CSV string of lead records and return a list of normalized dicts.
 
     Args:

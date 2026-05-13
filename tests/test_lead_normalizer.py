@@ -6,7 +6,6 @@ import pytest
 
 from src.data_prep.lead_normalizer import normalize_lead, normalize_leads_csv
 
-
 # ---------------------------------------------------------------------------
 # normalize_lead
 # ---------------------------------------------------------------------------
